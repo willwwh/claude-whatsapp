@@ -574,6 +574,9 @@ interface AccessState {
     requireMention: boolean
     allowFrom: string[]
     historyScope?: HistoryScope
+    // Only deliver image messages; text, voice, stickers etc. are dropped.
+    // Combines with requireMention (true → only tagged images).
+    imagesOnly?: boolean
   }>
   // Per-DM history scope overrides. DMs are otherwise uninteresting to track
   // separately (they live in allowFrom) — this map exists purely to hang a
@@ -1506,6 +1509,8 @@ async function handleInbound(msg: proto.IWebMessageInfo) {
     return
   }
 
+  if (isGroup && access.groups[chatId]?.imagesOnly && !hasImage(msg)) return
+
   // Show "typing..." indicator while Claude processes the message
   try { await sock!.sendPresenceUpdate('composing', chatId) } catch {}
 
@@ -1944,6 +1949,15 @@ function extractMentions(msg: proto.IWebMessageInfo): GateMentions {
   const mentioned = Array.isArray(ctx.mentionedJid) ? (ctx.mentionedJid as string[]) : []
   const quotedAuthor = typeof ctx.participant === 'string' ? ctx.participant : undefined
   return { mentioned, quotedAuthor }
+}
+
+// True when the message carries an image (including ephemeral / view-once
+// wrappers). Used by the per-group `imagesOnly` filter.
+function hasImage(msg: proto.IWebMessageInfo): boolean {
+  let m: any = msg.message
+  if (!m) return false
+  m = m.ephemeralMessage?.message || m.viewOnceMessage?.message || m.viewOnceMessageV2?.message || m
+  return !!m.imageMessage
 }
 
 // ---------------------------------------------------------------------------
